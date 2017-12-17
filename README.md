@@ -2,6 +2,7 @@ proxy.py for Qt online installer
 ========
 
 Lightweight HTTP Proxy Server in Python.
+
 Pick your desired mirror in proxy.py
 
 Features
@@ -25,7 +26,7 @@ proxy.py v0.1
 optional arguments:
   -h, --help            show this help message and exit
   --hostname HOSTNAME   Default: 127.0.0.1
-  --port PORT           Default: 8899
+  --port PORT           Default: 8888
   --log-level LOG_LEVEL
                         DEBUG, INFO, WARNING, ERROR, CRITICAL
 
