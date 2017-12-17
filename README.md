@@ -1,7 +1,8 @@
-proxy.py
+proxy.py for Qt online installer
 ========
 
 Lightweight HTTP Proxy Server in Python.
+Pick your desired mirror in proxy.py
 
 Features
 --------
@@ -10,14 +11,6 @@ Features
 - No dependency other than the Python standard library
 - Support for http, https, websockets request proxy
 
-Install
--------
-
-To install proxy.py, simply:
-
-	$ pip install proxy.py
-
-This will add `proxy.py` inside your python bin folder.
 
 Usage
 -----

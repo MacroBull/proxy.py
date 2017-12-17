@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-    proxy.py
+    proxy.py for Qt online installer
     ~~~~~~~~
     
     HTTP Proxy Server in Python.
@@ -12,10 +12,16 @@
 VERSION = (0, 2)
 __version__ = '.'.join(map(str, VERSION[0:2]))
 __description__ = 'HTTP Proxy Server in Python'
-__author__ = 'Abhinav Singh'
-__author_email__ = 'mailsforabhinav@gmail.com'
-__homepage__ = 'https://github.com/abhinavsingh/proxy.py'
+__original_author__ = 'Abhinav Singh'
+__original_author_email__ = 'mailsforabhinav@gmail.com'
+__original_homepage__ = 'https://github.com/abhinavsingh/proxy.py'
 __license__ = 'BSD'
+
+# select your favorite mirror
+FORWARD_MAP = {
+    b'download.qt.io': (b'mirrors.tuna.tsinghua.edu.cn', b'/qt')
+#    b'download.qt.io': (b'localhost', b'/qt')
+}
 
 import sys
 import multiprocessing
@@ -116,6 +122,7 @@ class HttpParser(object):
         
         self.raw = b''
         self.buffer = b''
+        self.prefix = b''
         
         self.headers = dict()
         self.body = None
@@ -127,6 +134,9 @@ class HttpParser(object):
         self.version = None
         
         self.chunker = None
+        
+    def __repr__(self):
+        return str(self.__dict__)
     
     def parse(self, data):
         self.raw += data
@@ -140,7 +150,7 @@ class HttpParser(object):
     
     def process(self, data):
         if self.state >= HTTP_PARSER_STATE_HEADERS_COMPLETE and \
-        (self.method == b"POST" or self.type == HTTP_RESPONSE_PARSER):
+        (self.method == b'POST' or self.type == HTTP_RESPONSE_PARSER):
             if not self.body:
                 self.body = b''
 
@@ -169,7 +179,7 @@ class HttpParser(object):
         
         if self.state == HTTP_PARSER_STATE_HEADERS_COMPLETE and \
         self.type == HTTP_REQUEST_PARSER and \
-        not self.method == b"POST" and \
+        not self.method == b'POST' and \
         self.raw.endswith(CRLF*2):
             self.state = HTTP_PARSER_STATE_COMPLETE
         
@@ -204,17 +214,17 @@ class HttpParser(object):
         if not self.url:
             return b'/None'
         
-        url = self.url.path
+        url = self.prefix + self.url.path
         if url == b'': url = b'/'
         if not self.url.query == b'': url += b'?' + self.url.query
         if not self.url.fragment == b'': url += b'#' + self.url.fragment
         return url
     
     def build_header(self, k, v):
-        return k + b": " + v + CRLF
+        return k + b': ' + v + CRLF
     
     def build(self, del_headers=None, add_headers=None):
-        req = b" ".join([self.method, self.build_url(), self.version])
+        req = b' '.join([self.method, self.build_url(), self.version])
         req += CRLF
         
         if not del_headers: del_headers = []
@@ -363,10 +373,19 @@ class Proxy(multiprocessing.Process):
         if self.request.state == HTTP_PARSER_STATE_COMPLETE:
             logger.debug('request parser is in state complete')
             
-            if self.request.method == b"CONNECT":
+            self.request.prefix = b''
+            if self.request.method == b'CONNECT':
                 host, port = self.request.url.path.split(COLON)
             elif self.request.url:
                 host, port = self.request.url.hostname, self.request.url.port if self.request.url.port else 80
+                if host in FORWARD_MAP:
+                    host, prefix = FORWARD_MAP[host]
+                    self.request.prefix = prefix
+                    logger.info('forward %s %s to %s %s' %
+                        (self.request.url.hostname,
+                         self.request.url.path,
+                         host,
+                         prefix + self.request.url.path))
             
             self.server = Server(host, port)
             try:
@@ -380,31 +399,35 @@ class Proxy(multiprocessing.Process):
             # for http connect methods (https requests)
             # queue appropriate response for client 
             # notifying about established connection
-            if self.request.method == b"CONNECT":
+            if self.request.method == b'CONNECT':
                 self.client.queue(self.connection_established_pkt)
             # for usual http requests, re-build request packet
             # and queue for the server with appropriate headers
             else:
                 self.server.queue(self.request.build(
-                    del_headers=[b'proxy-connection', b'connection', b'keep-alive'], 
-                    add_headers=[(b'Connection', b'Close')]
+                    del_headers=[b'proxy-connection', b'connection',
+                                 b'keep-alive', b'host'], 
+                    add_headers=[
+                        (b'Connection', b'Close'),
+                        (b'Host', host),
+                    ]
                 ))
     
     def _process_response(self, data):
         # parse incoming response packet
-        # only for non-https requests
-        if not self.request.method == b"CONNECT":
+        # only for non-https requests)
+        if not self.request.method == b'CONNECT':
             self.response.parse(data)
-        
+            
         # queue data for client
         self.client.queue(data)
     
     def _access_log(self):
         host, port = self.server.addr if self.server else (None, None)
-        if self.request.method == b"CONNECT":
-            logger.info("%s:%s - %s %s:%s" % (self.client.addr[0], self.client.addr[1], self.request.method, host, port))
+        if self.request.method == b'CONNECT':
+            logger.info('%s:%s - %s %s:%s' % (self.client.addr[0], self.client.addr[1], self.request.method, host, port))
         elif self.request.method:
-            logger.info("%s:%s - %s %s:%s%s - %s %s - %s bytes" % (self.client.addr[0], self.client.addr[1], self.request.method, host, port, self.request.build_url(), self.response.code, self.response.reason, len(self.response.raw)))
+            logger.info('%s:%s - %s %s:%s%s - %s %s - %s bytes' % (self.client.addr[0], self.client.addr[1], self.request.method, host, port, self.request.build_url(), self.response.code, self.response.reason, len(self.response.raw)))
         
     def _get_waitable_lists(self):
         rlist, wlist, xlist = [self.client.conn], [], []
@@ -497,17 +520,17 @@ class Proxy(multiprocessing.Process):
         except Exception as e:
             logger.exception('Exception while handling connection %r with reason %r' % (self.client.conn, e))
         finally:
-            logger.debug("closing client connection with pending client buffer size %d bytes" % self.client.buffer_size())
+            logger.debug('closing client connection with pending client buffer size %d bytes' % self.client.buffer_size())
             self.client.close()
             if self.server:
-                logger.debug("closed client connection with pending server buffer size %d bytes" % self.server.buffer_size())
+                logger.debug('closed client connection with pending server buffer size %d bytes' % self.server.buffer_size())
             self._access_log()
             logger.debug('Closing proxy for connection %r at address %r' % (self.client.conn, self.client.addr))
 
 class TCP(object):
     """TCP server implementation."""
     
-    def __init__(self, hostname='127.0.0.1', port=8899, backlog=100):
+    def __init__(self, hostname='127.0.0.1', port=8888, backlog=100):
         self.hostname = hostname
         self.port = port
         self.backlog = backlog
@@ -548,11 +571,11 @@ class HTTP(TCP):
 def main():
     parser = argparse.ArgumentParser(
         description='proxy.py v%s' % __version__,
-        epilog='Having difficulty using proxy.py? Report at: %s/issues/new' % __homepage__
+        epilog='Having difficulty using proxy.py? Report at: %s/issues/new' % __original_homepage__
     )
     
     parser.add_argument('--hostname', default='127.0.0.1', help='Default: 127.0.0.1')
-    parser.add_argument('--port', default='8899', help='Default: 8899')
+    parser.add_argument('--port', default='8888', help='Default: 8888')
     parser.add_argument('--log-level', default='INFO', help='DEBUG, INFO, WARNING, ERROR, CRITICAL')
     args = parser.parse_args()
     
