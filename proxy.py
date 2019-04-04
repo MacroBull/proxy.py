@@ -174,6 +174,7 @@ class HttpParser(object):
         self.state = HttpParser.states.INITIALIZED
 
         self.raw = b''
+        self.raw_size = 0
         self.buffer = b''
         self.prefix = b''
 
@@ -199,6 +200,7 @@ class HttpParser(object):
 
     def parse(self, data):
         self.raw += data
+        self.raw_size += len(data)
         data = self.buffer + data
         self.buffer = b''
 
@@ -496,10 +498,10 @@ class Proxy(threading.Thread):
                 if host in FORWARD_MAP:
                     host, prefix = FORWARD_MAP[host]
                     self.request.prefix = prefix
-                    logger.info('forward %s %s to %s %s' %
+                    logger.info('forward %s to %s:\n\t%s\n\tto\n\t%s' %
                         (self.request.url.hostname,
-                         self.request.url.path,
                          host,
+                         self.request.url.path,
                          prefix + self.request.url.path))
             else:
                 raise Exception('Invalid request\n%s' % self.request.raw)
@@ -543,7 +545,7 @@ class Proxy(threading.Thread):
         elif self.request.method:
             logger.info('%s:%s - %s %s:%s%s - %s %s - %s bytes' % (
                 self.client.addr[0], self.client.addr[1], self.request.method, host, port, self.request.build_url(),
-                self.response.code, self.response.reason, len(self.response.raw)))
+                self.response.code, self.response.reason, self.response.raw_size))
 
     def _get_waitable_lists(self):
         rlist, wlist, xlist = [self.client.conn], [], []
